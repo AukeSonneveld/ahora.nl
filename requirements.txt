@@ -1,0 +1,14 @@
+# Backend & AI
+langchain
+langchain-groq
+langchain-community
+beautifulsoup4
+feedparser
+requests
+python-dotenv
+
+# Frontend
+streamlit
+
+# Utilities
+schedule
