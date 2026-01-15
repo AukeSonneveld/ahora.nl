@@ -2,9 +2,7 @@ name: Hourly News Update
 
 on:
   schedule:
-    # Runs at minute 0 of every hour (e.g., 13:00, 14:00)
     - cron: '0 * * * *'
-  # Allows you to run it manually from the Actions tab for testing
   workflow_dispatch:
 
 permissions:
@@ -15,8 +13,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
+    # 1. CHECKOUT SPECIFICALLY THE v1.0 BRANCH
+    - name: Checkout v1.0 branch
       uses: actions/checkout@v3
+      with:
+        ref: v1.0 
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -30,14 +31,13 @@ jobs:
 
     - name: Run Update Script
       env:
-        # We inject the secret key here so the script can access it
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       run: python update_news.py
 
-    - name: Commit and Push changes
+    - name: Commit and Push changes to v1.0
       run: |
         git config --global user.name "NewsBot"
         git config --global user.email "bot@ahora.nl"
         git add data/news.json
-        # Only commit if the file actually changed
-        git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 AI Update: New Articles Added" && git push)
+        # Check if there are changes; if yes, commit and push explicitly to v1.0
+        git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 AI Update [v1.0]" && git push origin v1.0)
