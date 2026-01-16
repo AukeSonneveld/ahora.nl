@@ -27,7 +27,7 @@ def main():
     # 2. EXTRACT: Scrape the latest news
     print("1. Scraping NOS.nl...")
     # Scrape more candidates (e.g., 20) to ensure we find new ones even if the top 5 haven't changed much
-    latest_scraped = get_latest_news(limit=5) 
+    latest_scraped = get_latest_news(limit=20) 
     
     if not latest_scraped:
         print("No articles found on NOS. Aborting.")

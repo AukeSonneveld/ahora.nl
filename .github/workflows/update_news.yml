@@ -2,7 +2,7 @@ name: Hourly News Update
 
 on:
   schedule:
-    - cron: '9 * * * *'
+    - cron: '51 15 * * *'
   workflow_dispatch:
 
 permissions:
