@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. CHECKOUT SPECIFICALLY THE v1.0 BRANCH
-    - name: Checkout v1.0 branch
+    # 1. CHECKOUT SPECIFICALLY THE v1.1 BRANCH
+    - name: Checkout v1.1 branch
       uses: actions/checkout@v3
       with:
-        ref: v1.0 
+        ref: v1.1
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -34,10 +34,10 @@ jobs:
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       run: python update_news.py
 
-    - name: Commit and Push changes to v1.0
+    - name: Commit and Push changes to v1.1
       run: |
         git config --global user.name "NewsBot"
         git config --global user.email "bot@ahora.nl"
         git add data/news.json
-        # Check if there are changes; if yes, commit and push explicitly to v1.0
-        git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 AI Update [v1.0]" && git push origin v1.0)
+        # Check if there are changes; if yes, commit and push explicitly to v1.1
+        git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 AI Update [v1.1]" && git push origin v1.1)
