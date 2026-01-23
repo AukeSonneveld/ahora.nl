@@ -2,22 +2,21 @@ name: Hourly News Update
 
 on:
   schedule:
-    - cron: '51 15 * * *'
+    - cron: '51 */6 * * *'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read  # Changed from 'write' because the robot no longer pushes code!
 
 jobs:
   update-news:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. CHECKOUT SPECIFICALLY THE v1.1 BRANCH
-    - name: Checkout v1.1 branch
+    - name: Checkout v1.2 branch
       uses: actions/checkout@v3
       with:
-        ref: v1.1
+        ref: v1.2
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -31,13 +30,6 @@ jobs:
 
     - name: Run Update Script
       env:
+        DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       run: python update_news.py
-
-    - name: Commit and Push changes to v1.1
-      run: |
-        git config --global user.name "NewsBot"
-        git config --global user.email "bot@ahora.nl"
-        git add data/news.json
-        # Check if there are changes; if yes, commit and push explicitly to v1.1
-        git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 AI Update [v1.1]" && git push origin v1.1)

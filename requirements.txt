@@ -12,3 +12,7 @@ streamlit
 
 # Utilities
 schedule
+
+# Database (Supabase/Postgres)
+psycopg2-binary
+sqlalchemy

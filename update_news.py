@@ -1,95 +1,120 @@
-import json
 import os
+import json
+from datetime import datetime
+from sqlalchemy import create_engine, text
 from backend.scraper import get_latest_news
 from backend.translator import translate_article
-from datetime import datetime
 
-DATA_FILE = "data/news.json"
+# Database Setup
+DB_URI = os.getenv("DB_CONNECTION_STRING")
 
-def load_existing_data():
-    if not os.path.exists(DATA_FILE):
-        return []
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Warning: Could not read existing data ({e}). Starting fresh.")
-        return []
+def get_existing_ids(engine):
+    """Fetch all article IDs already in the database to avoid duplicates."""
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT id FROM news_articles"))
+        return {row[0] for row in result}
+
+def save_article_to_db(engine, article):
+    """Inserts a single article into Postgres."""
+    # We use JSONB for translations, so we dump the dict to a string
+    stmt = text("""
+        INSERT INTO news_articles (id, title, title_es, url, image_url, published_at, original_text, translations)
+        VALUES (:id, :title, :title_es, :url, :image_url, :published, :original_text, :translations)
+    """)
+    
+    with engine.connect() as conn:
+        conn.execute(stmt, {
+            "id": article["id"],
+            "title": article["title"],
+            "title_es": article.get("title_es"),
+            "url": article["url"],
+            "image_url": article["image_url"],
+            "published": article["published"], # Ensure scraper returns ISO format or datetime object
+            "original_text": article["original_text"],
+            "translations": json.dumps(article["translations"]) # Convert dict to JSON string
+        })
+        conn.commit()
+
+def cleanup_old_articles(engine, limit=100):
+    """Deletes oldest articles, keeping only the newest 'limit' amount."""
+    print(f"--- CLEANUP CHECK (Max {limit}) ---")
+    
+    # This Query says: "Delete everything that is NOT in the Top 100 newest list"
+    stmt = text("""
+        DELETE FROM news_articles 
+        WHERE id NOT IN (
+            SELECT id 
+            FROM news_articles 
+            ORDER BY published_at DESC 
+            LIMIT :limit
+        );
+    """)
+    
+    with engine.connect() as conn:
+        result = conn.execute(stmt, {"limit": limit})
+        conn.commit()
+        
+        if result.rowcount > 0:
+            print(f"  -> Deleted {result.rowcount} old articles to save space.")
+        else:
+            print("  -> Database size is within limits. No deletion needed.")
 
 def main():
-    print(f"--- STARTING NEWS UPDATE: {datetime.now()} ---")
+    print(f"--- STARTING SQL UPDATE: {datetime.now()} ---")
     
-    # 1. Load existing articles to check for duplicates
-    existing_articles = load_existing_data()
-    existing_ids = {article["id"] for article in existing_articles}
-    print(f"Loaded {len(existing_articles)} existing articles.")
-
-    # 2. EXTRACT: Scrape the latest news
-    print("1. Scraping NOS.nl...")
-    # Scrape more candidates (e.g., 20) to ensure we find new ones even if the top 5 haven't changed much
-    latest_scraped = get_latest_news(limit=20) 
-    
-    if not latest_scraped:
-        print("No articles found on NOS. Aborting.")
+    if not DB_URI:
+        print("ERROR: DB_CONNECTION_STRING is missing.")
         return
 
-    # 3. FILTER: Keep only new articles
-    new_articles_to_process = []
-    for article in latest_scraped:
-        if article["id"] not in existing_ids:
-            new_articles_to_process.append(article)
+    engine = create_engine(DB_URI)
     
-    if not new_articles_to_process:
-        print("No new articles found. Database is up to date.")
+    # 1. Check what we already have
+    try:
+        existing_ids = get_existing_ids(engine)
+        print(f"Database currently has {len(existing_ids)} articles.")
+    except Exception as e:
+        print(f"Database Error: {e}")
         return
 
-    print(f"Found {len(new_articles_to_process)} NEW articles to process.")
-
-    # 4. TRANSFORM: Translate only the new articles
-    processed_new_articles = []
+    # 2. Scrape
+    print("Scraping NOS...")
+    latest_scraped = get_latest_news(limit=5)
     
-    for index, article in enumerate(new_articles_to_process):
-        print(f"   Processing New Article {index + 1}/{len(new_articles_to_process)}: {article['title']}")
-        
-        # Call our deep translator (paragraph by paragraph)
-        translations = translate_article(article['title'], article['original_text'])
-        
-        # Enrich the article object
-        article['title_es'] = translations['title_es']
-        article['translations'] = translations
-        
-        # Optional cleanup of temp key inside translations if present
-        if 'title_es' in article['translations']:
-            del article['translations']['title_es']
+    # 3. Filter New
+    new_articles = [a for a in latest_scraped if a["id"] not in existing_ids]
+    
+    if not new_articles:
+        print("No new articles.")
+        print("--- UPDATE COMPLETE ---")
+        return
 
-        # Check if there were translation errors. 
-        has_error = False
-        error_marker = "[Translation Error]"
-        for level, text in article['translations'].items():
-            if error_marker in text:
-                has_error = True
-                break
-        if has_error:
-            print(f"   X Skipping '{article['title']}' due to translation errors.")
-            continue # Skip to the next article in the loop, discarding this one
+    print(f"Found {len(new_articles)} new articles.")
+
+    # 4. Translate & Save (One by One)
+    for index, article in enumerate(new_articles):
+        print(f"Processing {index+1}/{len(new_articles)}: {article['title']}")
+        
+        try:
+            # Translate
+            translations = translate_article(article['title'], article['original_text'])
             
-        processed_new_articles.append(article)
+            # Enrich
+            article['title_es'] = translations['title_es']
+            article['translations'] = translations # This is a dict
+            if 'title_es' in article['translations']:
+                del article['translations']['title_es']
 
-    # 5. LOAD: Merge and Save
-    # We put the NEW articles at the FRONT of the list [New, Old...]
-    updated_database = processed_new_articles + existing_articles
-    
-    # Optional: Keep database size manageable (e.g., keep last 100 articles only)
-    # updated_database = updated_database[:100]
+            # Save to DB immediately
+            save_article_to_db(engine, article)
+            print("  -> Saved to DB")
+            
+        except Exception as e:
+            print(f"  X Failed to process article: {e}")
 
-    print(f"3. Saving updated database ({len(updated_database)} total articles)...")
-    
-    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-    
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(updated_database, f, indent=4, ensure_ascii=False)
-        
-    print(f"--- SUCCESS: Added {len(processed_new_articles)} new articles. ---")
+    # 5. Cleanup at the very end
+    cleanup_old_articles(engine, limit=100)
+
+    print("--- UPDATE COMPLETE ---")
 
 if __name__ == "__main__":
     main()

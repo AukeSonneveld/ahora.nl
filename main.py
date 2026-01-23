@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import os
 from datetime import datetime
+from sqlalchemy import create_engine, text
 
 # --- CONFIGURATION ---
 DATA_FILE = "data/news.json"
@@ -11,19 +12,41 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- LOAD DATA ---
-@st.cache_data(ttl=3600)
-def load_news():
-    if not os.path.exists(DATA_FILE):
-        return []
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        st.error(f"Error loading news data: {e}")
-        return []
+# Retrieve connection string from Streamlit Secrets
+DB_URI = st.secrets.get("DB_CONNECTION_STRING")
 
-articles = load_news()
+# --- LOAD DATA ---
+@st.cache_data(ttl=300) # Cache for 5 mins
+def load_news_from_db():
+    if not DB_URI:
+        st.error("Database secret not found.")
+        return []
+    
+    engine = create_engine(DB_URI)
+    query = text("""
+        SELECT title, title_es, image_url, published_at, translations, url, original_text 
+        FROM news_articles 
+        ORDER BY published_at DESC 
+        LIMIT 20
+    """)
+    
+    with engine.connect() as conn:
+        result = conn.execute(query)
+        articles = []
+        for row in result:
+            # Row is a tuple, access by index or convert to dict mapping
+            articles.append({
+                "title": row.title,
+                "title_es": row.title_es,
+                "image_url": row.image_url,
+                "published": str(row.published_at),
+                "translations": row.translations, # SQL Alchemy handles JSONB auto-conversion
+                "url": row.url,
+                "original_text": row.original_text
+            })
+        return articles
+
+articles = load_news_from_db()
 
 # --- SIDEBAR (INFO ONLY) ---
 st.sidebar.header("About")
