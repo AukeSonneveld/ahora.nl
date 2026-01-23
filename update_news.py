@@ -104,6 +104,16 @@ def main():
             if 'title_es' in article['translations']:
                 del article['translations']['title_es']
 
+            # Check for translation errors
+            has_error = False
+            for level, text in article['translations'].items():
+                if "[Translation Error]" in text:
+                    has_error = True
+                    break
+            if has_error:
+                print(f"   X Skipping '{article['title']}' due to translation errors.")
+                continue # Skip to the next article in the loop, discarding this one
+
             # Save to DB immediately
             save_article_to_db(engine, article)
             print("  -> Saved to DB")
