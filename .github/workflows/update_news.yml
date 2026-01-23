@@ -1,4 +1,4 @@
-name: Hourly News Update
+name: Periodic News Update
 
 on:
   schedule:
@@ -6,17 +6,15 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read  # Changed from 'write' because the robot no longer pushes code!
+  contents: read
 
 jobs:
   update-news:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout v1.2 branch
+    - name: Checkout repository
       uses: actions/checkout@v3
-      with:
-        ref: v1.2
 
     - name: Set up Python
       uses: actions/setup-python@v4
